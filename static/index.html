@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Average DBH Over Time (Permitted vs. Not Permitted)</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+      .line {
+        fill: none;
+        stroke-width: 2px;
+      }
+      .axis-label {
+        font-size: 14px;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+
+  <body>
+    <svg id="linechart" height="500" width="900"></svg>
+    <script>
+      const svg = d3.select("#linechart"),
+        width = svg.attr("width"),
+        height = svg.attr("height"),
+        margin = { top: 80, right: 100, bottom: 50, left: 100 },
+        chartWidth = width - margin.left - margin.right,
+        chartHeight = height - margin.top - margin.bottom;
+
+      const chartArea = svg
+        .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+      const loadChart = async () => {
+        let data = await d3.csv(
+          "Street_Tree_List-2022-01-30_FILTERED.csv",
+          d3.autoType
+        );
+
+        data.forEach((d) => {
+          d.PlantDate = new Date(d.PlantDate);
+          d.PlantYear = d.PlantDate.getFullYear();
+          d.DBH = d.DBH;
+        });
+
+        const maintainedTrees = data.filter(
+          (d) => d.qLegalStatus === "DPW Maintained"
+        );
+
+        const notMaintainedTrees = data.filter(
+          (d) => d.qLegalStatus !== "DPW Maintained"
+        );
+
+        const computeAverageDBH = (dataset) => {
+          return d3
+            .groups(dataset, (d) => d.PlantYear)
+            .map(([year, entries]) => ({
+              year: year,
+              avgDBH: d3.mean(entries, (d) => d.DBH),
+            }))
+            .filter((d) => d.year >= 1970)
+            .sort((a, b) => d3.ascending(a.year, b.year));
+        };
+
+        const maintainedDBH = computeAverageDBH(maintainedTrees);
+        const notMaintainedDBH = computeAverageDBH(notMaintainedTrees);
+
+        const yearExtent = d3.extent(data, (d) => d.PlantYear);
+        const yearScale = d3
+          .scaleLinear()
+          .domain([1970, d3.max(yearExtent)])
+          .range([0, chartWidth]);
+
+        const dbhExtent = d3.extent(data, (d) => d.DBH);
+        const dbhScale = d3
+          .scaleLinear()
+          .domain([d3.min(dbhExtent), 40])
+          .range([chartHeight, 0]);
+
+        const colorScale = d3
+          .scaleOrdinal()
+          .domain(["Maintained", "Not DPW Maintained"])
+          .range(["#377EB8", "#D32F2F"]);
+
+        svg
+          .append("text")
+          .attr("x", width / 2)
+          .attr("y", 40)
+          .attr("text-anchor", "middle")
+          .style("font-size", "18px")
+          .style("font-weight", "bold")
+          .text(
+            "Average DBH Over Time for DPW Maintained vs. Not DPW Maintained Trees"
+          );
+
+        chartArea
+          .append("g")
+          .attr("class", "x-axis")
+          .attr("transform", `translate(0,${chartHeight})`)
+          .call(d3.axisBottom(yearScale).tickFormat(d3.format("~f")));
+
+        chartArea
+          .append("text")
+          .attr("x", chartWidth / 2)
+          .attr("y", chartHeight + 40)
+          .attr("text-anchor", "middle")
+          .attr("class", "axis-label")
+          .text("Year Planted");
+
+        chartArea
+          .append("g")
+          .attr("class", "y-axis")
+          .call(d3.axisLeft(dbhScale));
+
+        chartArea
+          .append("g")
+          .attr("class", "y gridlines")
+          .call(d3.axisLeft(dbhScale).tickSize(-chartWidth).tickFormat(""))
+          .attr("stroke-opacity", 0.3);
+
+        chartArea
+          .append("text")
+          .attr("transform", "rotate(-90)")
+          .attr("x", -chartHeight / 2)
+          .attr("y", -50)
+          .attr("text-anchor", "middle")
+          .attr("class", "axis-label")
+          .text("Average DBH (in)");
+
+        const line = d3
+          .line()
+          .x((d) => yearScale(d.year))
+          .y((d) => dbhScale(d.avgDBH))
+          .curve(d3.curveBasis);
+
+        if (maintainedDBH.length > 0) {
+          chartArea
+            .append("path")
+            .datum(maintainedDBH)
+            .attr("class", "line")
+            .attr("stroke", colorScale("Maintained"))
+            .attr("d", line);
+        }
+
+        if (notMaintainedDBH.length > 0) {
+          chartArea
+            .append("path")
+            .datum(notMaintainedDBH)
+            .attr("class", "line")
+            .attr("stroke", colorScale("Not DPW Maintained"))
+            .attr("d", line);
+        }
+
+        const legend = svg
+          .append("g")
+          .attr("transform", `translate(${width - 270}, 90)`);
+
+        const keys = ["Maintained", "Not DPW Maintained"];
+        const size = 10;
+
+        legend
+          .selectAll("mydots")
+          .data(keys)
+          .enter()
+          .append("rect")
+          .attr("x", 0)
+          .attr("y", function (d, i) {
+            return i * (size + 5);
+          })
+          .attr("width", size)
+          .attr("height", size)
+          .style("fill", function (d) {
+            return colorScale(d);
+          });
+
+        legend
+          .selectAll("mylabels")
+          .data(keys)
+          .enter()
+          .append("text")
+          .attr("x", size * 1.2)
+          .attr("y", function (d, i) {
+            return i * (size + 6) + size / 2;
+          })
+          .style("fill", function (d) {
+            return colorScale(d);
+          })
+          .text(function (d) {
+            return d;
+          })
+          .attr("text-anchor", "left")
+          .style("alignment-baseline", "middle");
+      };
+
+      loadChart();
+    </script>
+  </body>
+</html>
